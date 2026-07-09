@@ -61,30 +61,44 @@ def run_once(cfg: Config, capture: ScreenCapture, finder: BobberFinder) -> None:
     print(f"  saved -> {out}")
 
 
+def _countdown(secs: int) -> None:
+    print(f"\n>>> Switch to WoW NOW (click the game window). Capturing in {secs}s...")
+    for i in range(secs, 0, -1):
+        print(f"    {i}...", end="\r", flush=True)
+        time.sleep(1)
+    print("    capturing!            ")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Preview bobber detection (no input sent)")
     ap.add_argument("--config", default=None)
-    ap.add_argument("--loop", action="store_true", help="re-check repeatedly")
+    ap.add_argument("--loop", action="store_true", help="re-check every few seconds")
+    ap.add_argument("--delay", type=int, default=5,
+                    help="seconds to switch to WoW before the first capture (default 5)")
     args = ap.parse_args()
 
     cfg = Config.load(args.config)
     print(f"Region being watched: {cfg.region}  strategy={cfg.bobber.get('strategy')}")
-    print("Make sure you've cast in-game and the bobber is visible.\n")
+    print("Single monitor? Cast in WoW first, run this, then click back into WoW\n"
+          "during the countdown so the game (not this terminal) is on screen.")
 
     capture = ScreenCapture()
     finder = BobberFinder(cfg, capture, _NoController())
     try:
+        _countdown(max(1, args.delay))
         if args.loop:
+            # Keep capturing every couple seconds so you can watch it lock on.
+            # Stay in WoW; alt-tab back to the terminal / image when done (Ctrl+C).
             while True:
                 run_once(cfg, capture, finder)
-                time.sleep(1.5)
+                time.sleep(2.0)
         else:
             run_once(cfg, capture, finder)
     except KeyboardInterrupt:
         pass
     finally:
         capture.close()
-    print("\nOpen detection_preview.png to see the green crosshair on your bobber.")
+    print("\nNow alt-tab back and open detection_preview.png to see the crosshair.")
 
 
 if __name__ == "__main__":
