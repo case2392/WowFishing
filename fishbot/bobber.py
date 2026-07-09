@@ -63,6 +63,9 @@ class BobberFinder:
         self.region = cfg.region
         self._template = None
         self._default_cursor: Optional[int] = None
+        self._gear_ever = False      # have we ever seen the interact cursor change?
+        self._gear_disabled = False  # auto-disable gear check if it never works
+        self._acquire_fail = 0       # consecutive acquires with no verified bobber
         self._load_template()  # harmless if the file isn't there yet
 
     # ------------------------------------------------------------------ #
@@ -146,24 +149,53 @@ class BobberFinder:
         the real bobber. If none do, returns None so the bot recasts instead of
         sitting on a crate or empty water for the whole cast.
         """
-        gear_ok = _win32_ok and self.b.get("cursor_confirm", True)
+        gear_ok = (_win32_ok and self.b.get("cursor_confirm", True)
+                   and not self._gear_disabled)
+        best_seen: Optional[Point] = None
         for _ in range(max(1, retries)):
             candidates = self.find_ranked(max_candidates=5)
             if candidates:
+                best_seen = candidates[0]
                 if not gear_ok:
-                    # Can't verify (no pywin32) -> trust the top visual match.
                     self.controller.move_to(candidates[0])
                     return candidates[0]
                 for cand in candidates:
                     self.controller.move_to(cand)
                     humanize.human_sleep(humanize.rand_range([0.05, 0.10]))
                     if self._is_interact_cursor():
+                        self._announce_gear_working()
+                        self._acquire_fail = 0
                         return cand
                     nudged = self._nudge_until_interact(cand)
                     if nudged is not None:
+                        self._announce_gear_working()
+                        self._acquire_fail = 0
                         return nudged
             humanize.human_sleep(humanize.rand_range([0.2, 0.4]))
+
+        # Nothing verified via the gear cursor this cast.
+        if gear_ok:
+            self._acquire_fail += 1
+            # If the gear cursor has NEVER worked after several tries, it's almost
+            # certainly disabled in WoW (software cursor). Stop relying on it and
+            # fall back to visual-only so we don't waste every cast hunting a gear
+            # that will never appear.
+            if not self._gear_ever and self._acquire_fail >= 4:
+                self._gear_disabled = True
+                print("[bobber] The gold-gear cursor never registered after several "
+                      "casts -- turning OFF the gear check and using visual detection "
+                      "only. To re-enable it, turn ON 'Hardware Cursor' in WoW "
+                      "(System > Advanced).")
+                if best_seen is not None:
+                    self.controller.move_to(best_seen)
+                    return best_seen
         return None
+
+    def _announce_gear_working(self) -> None:
+        if not self._gear_ever:
+            self._gear_ever = True
+            print("[bobber] gold-gear cursor verification is WORKING "
+                  "(bobber confirmed by the interact cursor).")
 
     def _nudge_until_interact(self, center: Point) -> Optional[Point]:
         """Tiny local search for the gear cursor around a candidate; None if not found."""
@@ -295,19 +327,27 @@ class BobberFinder:
     def _color_candidates(self, frame: np.ndarray) -> List[tuple]:
         """Return red+blue-signature points as ((local_x, local_y), score)."""
         h, w = frame.shape[:2]
-        max_area = (w * h) * 0.01
-        min_area = 10.0
+        # The bobber's feathers are small; capping area rejects big reflection
+        # patches (orange cliff / blue sky) that would otherwise pair up.
+        max_area = 1600.0
+        min_area = 8.0
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        red = cv2.inRange(hsv, np.array([0, 80, 70]), np.array([12, 255, 255])) | \
-              cv2.inRange(hsv, np.array([166, 80, 70]), np.array([180, 255, 255]))
-        blue = cv2.inRange(hsv, np.array([90, 70, 60]), np.array([132, 255, 255]))
+        # Saturated red/orange -> the bobber feather (the distance + area caps below
+        # are what actually reject the softer, larger cliff reflection).
+        red = cv2.inRange(hsv, np.array([0, 100, 80]), np.array([13, 255, 255])) | \
+              cv2.inRange(hsv, np.array([168, 100, 80]), np.array([180, 255, 255]))
+        # Saturated steel/blue feather; absent from warm water and pale sky.
+        blue = cv2.inRange(hsv, np.array([92, 80, 70]), np.array([132, 255, 255]))
         red_blobs = self._blobs(red, min_area, max_area)
         blue_blobs = self._blobs(blue, min_area, max_area)
+        # Bobber size: the red and blue feathers sit within ~26 px of each other.
+        # A far-apart red+blue (cliff reflection + sky) is NOT the bobber.
+        pair_dist = float(self.b.get("pair_max_dist", 26))
         out: List[tuple] = []
         for r in red_blobs:
             for b in blue_blobs:
                 dist = ((r["x"] - b["x"]) ** 2 + (r["y"] - b["y"]) ** 2) ** 0.5
-                if dist > 55:
+                if dist > pair_dist:
                     continue
                 red_on_top = r["y"] <= b["y"] + 8
                 # Aim at the bobber body (between the feathers), a touch low toward
@@ -316,7 +356,7 @@ class BobberFinder:
                 ty = (r["y"] + b["y"]) / 2 + 4
                 # A red-above-blue pairing is the most trustworthy signal we have --
                 # score it ABOVE template peaks so the crate/water never wins.
-                score = 1.8 + (0.6 if red_on_top else 0.0) + 0.4 * (1.0 - min(1.0, dist / 55.0))
+                score = 1.8 + (0.6 if red_on_top else 0.0) + 0.4 * (1.0 - min(1.0, dist / pair_dist))
                 out.append(((tx, ty), score))
         # Weak fallback: a lone bobber-sized red feather, ranked below templates.
         for r in sorted(red_blobs, key=lambda k: abs(k["area"] - 120))[:2]:
