@@ -110,9 +110,9 @@ class BobberFinder:
     def _local_nudges(self, center: Point) -> List[Point]:
         import math
         pts: List[Point] = []
-        for radius in (7, 12, 18):
-            for k in range(6):
-                ang = 2 * math.pi * k / 6 + radius  # rotate each ring so points differ
+        for radius in (8, 15, 22, 30):
+            for k in range(8):
+                ang = 2 * math.pi * k / 8 + radius  # rotate each ring so points differ
                 pts.append((center[0] + radius * math.cos(ang),
                             center[1] + radius * math.sin(ang)))
         return pts
@@ -127,7 +127,8 @@ class BobberFinder:
             elif strategy == "template":
                 pt = self._find_template_singlescale()
             else:  # "vision" (default) and any unknown value
-                pt = self._find_vision()
+                ranked = self.find_ranked(max_candidates=1)
+                pt = ranked[0] if ranked else None
             if pt is not None:
                 return pt
             humanize.human_sleep(humanize.rand_range([0.25, 0.5]))
@@ -309,11 +310,15 @@ class BobberFinder:
                 if dist > 55:
                     continue
                 red_on_top = r["y"] <= b["y"] + 8
+                # Aim at the bobber body (between the feathers), a touch low toward
+                # the cork that floats on the water.
                 tx = (r["x"] + b["x"]) / 2
                 ty = (r["y"] + b["y"]) / 2 + 4
-                score = 0.5 + 0.2 * (1 if red_on_top else 0) + 200.0 / (dist + 8) / 100.0
+                # A red-above-blue pairing is the most trustworthy signal we have --
+                # score it ABOVE template peaks so the crate/water never wins.
+                score = 1.8 + (0.6 if red_on_top else 0.0) + 0.4 * (1.0 - min(1.0, dist / 55.0))
                 out.append(((tx, ty), score))
-        # Also offer strong lone red feathers (bobber-sized) as weaker candidates.
+        # Weak fallback: a lone bobber-sized red feather, ranked below templates.
         for r in sorted(red_blobs, key=lambda k: abs(k["area"] - 120))[:2]:
             out.append(((r["x"], r["y"]), 0.35))
         return out
