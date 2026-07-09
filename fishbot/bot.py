@@ -107,6 +107,13 @@ class FishingBot:
               f"dry_run={self.cfg.control.get('dry_run', False)}")
         print(f"[bot] bobber strategy: {self.cfg.bobber.get('strategy')}  "
               f"splash: {type(self.detector).__name__}")
+        from .bobber import _win32_ok
+        if self.cfg.bobber.get("cursor_confirm", True) and not _win32_ok:
+            print("[bot] WARNING: pywin32 not found, so the gold-gear cursor check "
+                  "is OFF. It will trust the top visual match and may lock onto the "
+                  "crate/water. Install it:  pip install pywin32")
+        elif self.cfg.bobber.get("cursor_confirm", True):
+            print("[bot] gold-gear cursor verification: ON (rejects crate/water)")
         max_minutes = float(self.cfg.human.get("max_session_minutes", 150))
         learned = False
         try:
@@ -140,21 +147,22 @@ class FishingBot:
         self._cast()
         self.stats.casts += 1
 
-        # 2) Let the line settle, then find the bobber.
+        # 2) Let the line settle, then acquire the bobber. acquire() ranks several
+        #    candidates and moves onto each until the gold gear (interact) cursor
+        #    confirms the real bobber -- rejecting the crate and empty-water false
+        #    positives. Returns None if none verify, so we recast right away
+        #    instead of sitting on a dead spot for the whole cast.
         humanize.human_sleep(humanize.jittered(cfg.timing.get("post_cast_wait", 1.6), 0.2))
         if self._paused or self._quit:
             return
-        bobber = self.finder.find()
+        bobber = self.finder.acquire()
         if bobber is None:
             self.stats.misses += 1
-            print(f"[cast {self.stats.casts}] bobber not found; recasting.")
+            print(f"[cast {self.stats.casts}] bobber not confirmed (gear cursor); recasting.")
             humanize.human_sleep(humanize.rand_range([0.3, 0.9]))
             return
 
-        # Move onto the bobber ONCE, smoothly, confirming via the gold gear
-        # cursor (a tiny nudge if the visual match was a few px off). Then leave
-        # the cursor there and sit still -- like a person watching for a bite.
-        bobber = self.finder.move_and_confirm(bobber)
+        # Cursor is now confirmed ON the bobber; leave it still and watch.
         if isinstance(self.detector, PixelSplashDetector):
             self.detector.set_target(bobber)
 

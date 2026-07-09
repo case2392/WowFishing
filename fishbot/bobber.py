@@ -134,6 +134,70 @@ class BobberFinder:
         return None
 
     # ================================================================== #
+    #  ACQUIRE: rank several candidates, then let the gold gear cursor    #
+    #  pick the real bobber (rejecting the crate / water false positives) #
+    # ================================================================== #
+    def acquire(self, retries: int = 2) -> Optional[Point]:
+        """Find the bobber and move onto it, VERIFIED by the interact cursor.
+
+        Produces several ranked candidate points, then moves to each and checks
+        for the golden gear cursor. The first candidate that shows the gear is
+        the real bobber. If none do, returns None so the bot recasts instead of
+        sitting on a crate or empty water for the whole cast.
+        """
+        gear_ok = _win32_ok and self.b.get("cursor_confirm", True)
+        for _ in range(max(1, retries)):
+            candidates = self.find_ranked(max_candidates=5)
+            if candidates:
+                if not gear_ok:
+                    # Can't verify (no pywin32) -> trust the top visual match.
+                    self.controller.move_to(candidates[0])
+                    return candidates[0]
+                for cand in candidates:
+                    self.controller.move_to(cand)
+                    humanize.human_sleep(humanize.rand_range([0.05, 0.10]))
+                    if self._is_interact_cursor():
+                        return cand
+                    nudged = self._nudge_until_interact(cand)
+                    if nudged is not None:
+                        return nudged
+            humanize.human_sleep(humanize.rand_range([0.2, 0.4]))
+        return None
+
+    def _nudge_until_interact(self, center: Point) -> Optional[Point]:
+        """Tiny local search for the gear cursor around a candidate; None if not found."""
+        for pt in self._local_nudges(center):
+            self.controller.move_to(pt, duration=humanize.rand_range([0.03, 0.07]))
+            humanize.human_sleep(humanize.rand_range([0.03, 0.05]))
+            if self._is_interact_cursor():
+                return (int(pt[0]), int(pt[1]))
+        return None
+
+    def find_ranked(self, max_candidates: int = 5) -> List[Point]:
+        """Return several likely bobber points, best first (template + color)."""
+        if cv2 is None:
+            return []
+        frame = self.capture.grab(self.region)
+        self._blank_ignore_zones(frame)
+        left, top, _, _ = self.region
+
+        scored: List[tuple] = []  # (score, x, y)
+        for (lx, ly), val in self._template_candidates(frame, n=max_candidates):
+            scored.append((val + 1.0, left + lx, top + ly))   # template ranks first
+        for (lx, ly), val in self._color_candidates(frame):
+            scored.append((val, left + lx, top + ly))
+
+        # Deduplicate points that are within ~22 px of a higher-scoring one.
+        scored.sort(key=lambda s: s[0], reverse=True)
+        picked: List[Point] = []
+        for _s, x, y in scored:
+            if all((x - px) ** 2 + (y - py) ** 2 > 22 * 22 for px, py in picked):
+                picked.append((int(x), int(y)))
+            if len(picked) >= max_candidates:
+                break
+        return picked
+
+    # ================================================================== #
     #  VISION (default): template multi-scale, then color blob            #
     # ================================================================== #
     def _find_vision(self) -> Optional[Point]:
@@ -187,6 +251,72 @@ class BobberFinder:
         cx = left + best_loc[0] + best_wh[0] // 2
         cy = top + best_loc[1] + best_wh[1] // 2
         return (cx, cy)
+
+    def _template_candidates(self, frame: np.ndarray, n: int = 5) -> List[tuple]:
+        """Return up to n template-match peaks as ((local_x, local_y), score).
+
+        Threshold is deliberately loose because the gear-cursor check downstream
+        rejects false peaks -- better to over-offer candidates than to miss the
+        real bobber when the match is a bit weak.
+        """
+        if self._template is None:
+            return []
+        th0, tw0 = self._template.shape[:2]
+        # Find the scale that matches best, then pull several peaks from its map.
+        best = None  # (res, tw, th, maxval)
+        for scale in (0.6, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5):
+            tw, th = int(tw0 * scale), int(th0 * scale)
+            if tw < 8 or th < 8 or tw >= frame.shape[1] or th >= frame.shape[0]:
+                continue
+            tmpl = cv2.resize(self._template, (tw, th), interpolation=cv2.INTER_AREA)
+            res = cv2.matchTemplate(frame, tmpl, cv2.TM_CCOEFF_NORMED)
+            _, mx, _, _ = cv2.minMaxLoc(res)
+            if best is None or mx > best[3]:
+                best = (res, tw, th, mx)
+        if best is None:
+            return []
+        res, tw, th, _mx = best
+        min_val = float(self.b.get("match_threshold", 0.6)) * 0.75  # loose; gear filters
+        supp = max(tw, th)
+        out: List[tuple] = []
+        work = res.copy()
+        for _ in range(n):
+            _, mv, _, ml = cv2.minMaxLoc(work)
+            if mv < min_val:
+                break
+            cx, cy = ml[0] + tw // 2, ml[1] + th // 2
+            out.append(((cx, cy), float(mv)))
+            x0, y0 = max(0, ml[0] - supp), max(0, ml[1] - supp)
+            x1, y1 = min(work.shape[1], ml[0] + supp), min(work.shape[0], ml[1] + supp)
+            work[y0:y1, x0:x1] = -1.0  # suppress around this peak
+        return out
+
+    def _color_candidates(self, frame: np.ndarray) -> List[tuple]:
+        """Return red+blue-signature points as ((local_x, local_y), score)."""
+        h, w = frame.shape[:2]
+        max_area = (w * h) * 0.01
+        min_area = 10.0
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        red = cv2.inRange(hsv, np.array([0, 80, 70]), np.array([12, 255, 255])) | \
+              cv2.inRange(hsv, np.array([166, 80, 70]), np.array([180, 255, 255]))
+        blue = cv2.inRange(hsv, np.array([90, 70, 60]), np.array([132, 255, 255]))
+        red_blobs = self._blobs(red, min_area, max_area)
+        blue_blobs = self._blobs(blue, min_area, max_area)
+        out: List[tuple] = []
+        for r in red_blobs:
+            for b in blue_blobs:
+                dist = ((r["x"] - b["x"]) ** 2 + (r["y"] - b["y"]) ** 2) ** 0.5
+                if dist > 55:
+                    continue
+                red_on_top = r["y"] <= b["y"] + 8
+                tx = (r["x"] + b["x"]) / 2
+                ty = (r["y"] + b["y"]) / 2 + 4
+                score = 0.5 + 0.2 * (1 if red_on_top else 0) + 200.0 / (dist + 8) / 100.0
+                out.append(((tx, ty), score))
+        # Also offer strong lone red feathers (bobber-sized) as weaker candidates.
+        for r in sorted(red_blobs, key=lambda k: abs(k["area"] - 120))[:2]:
+            out.append(((r["x"], r["y"]), 0.35))
+        return out
 
     def _blobs(self, mask: np.ndarray, min_area: float, max_area: float) -> List[dict]:
         """Return cleaned-up colored blobs as dicts of {x, y, area}."""
