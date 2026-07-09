@@ -108,11 +108,16 @@ class FishingBot:
         print(f"[bot] bobber strategy: {self.cfg.bobber.get('strategy')}  "
               f"splash: {type(self.detector).__name__}")
         max_minutes = float(self.cfg.human.get("max_session_minutes", 150))
+        learned = False
         try:
             while not self._quit:
                 self._wait_while_paused()
                 if self._quit:
                     break
+                if not learned:
+                    # Learn the normal cursor once, now that the game is focused.
+                    self.finder.learn_default_cursor()
+                    learned = True
                 if (time.monotonic() - self.stats.started_at) / 60.0 >= max_minutes:
                     print(f"[bot] session limit reached ({max_minutes} min). Stopping.")
                     break
@@ -146,9 +151,10 @@ class FishingBot:
             humanize.human_sleep(humanize.rand_range([0.3, 0.9]))
             return
 
-        # Move onto the bobber ONCE, smoothly, then leave the cursor there and
-        # let it sit perfectly still -- exactly like a person watching for a bite.
-        self.controller.move_to(bobber)
+        # Move onto the bobber ONCE, smoothly, confirming via the gold gear
+        # cursor (a tiny nudge if the visual match was a few px off). Then leave
+        # the cursor there and sit still -- like a person watching for a bite.
+        bobber = self.finder.move_and_confirm(bobber)
         if isinstance(self.detector, PixelSplashDetector):
             self.detector.set_target(bobber)
 

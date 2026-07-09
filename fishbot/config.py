@@ -33,9 +33,10 @@ _DEFAULTS: dict = {
     "region": [335, 175, 1115, 705],
     "ignore_zones": [],
     "bobber": {
-        "strategy": "cursor_scan",
+        "strategy": "vision",
         "template_path": "assets/bobber.png",
-        "match_threshold": 0.62,
+        "match_threshold": 0.60,
+        "cursor_confirm": True,
         "scan_step": 22,
         "scan_settle_ms": 9,
     },

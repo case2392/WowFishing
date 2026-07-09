@@ -38,6 +38,10 @@ bobber:
   strategy: "vision"
   template_path: "assets/bobber.png"
   match_threshold: 0.60      # template match confidence (0-1), lower = looser
+  # After moving onto the bobber, confirm the WoW "interact" cursor (the golden
+  # gear) actually appeared. If not, make a TINY local nudge to land exactly on
+  # it. Hugely improves reliability; not a big sweep. Windows only.
+  cursor_confirm: true
   scan_step: 22              # (cursor_scan only) px between probe points
   scan_settle_ms: 9          # (cursor_scan only) ms to let the cursor update
 

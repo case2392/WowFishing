@@ -66,6 +66,58 @@ class BobberFinder:
         self._load_template()  # harmless if the file isn't there yet
 
     # ------------------------------------------------------------------ #
+    #  Gear-cursor confirmation                                           #
+    # ------------------------------------------------------------------ #
+    def learn_default_cursor(self) -> None:
+        """Sample the normal cursor over open water so we can spot the interact gear.
+
+        Called once at startup; a region corner is almost always empty water.
+        """
+        if not _win32_ok:
+            return
+        left, top, _w, _h = self.region
+        self.controller.move_to((left + 8, top + 8),
+                                duration=humanize.rand_range([0.2, 0.4]))
+        humanize.human_sleep(0.06)
+        self._default_cursor = current_cursor_handle()
+
+    def _is_interact_cursor(self) -> bool:
+        """True if the cursor is currently the golden gear (differs from default)."""
+        h = current_cursor_handle()
+        return (h is not None and self._default_cursor is not None
+                and h != self._default_cursor)
+
+    def move_and_confirm(self, candidate: Point) -> Point:
+        """Move onto the bobber, confirming via the gear cursor.
+
+        If the gear doesn't show, make a TINY local spiral nudge (a few px, like a
+        person adjusting their aim) until it does. Returns the final point.
+        """
+        self.controller.move_to(candidate)
+        if not _win32_ok or not self.b.get("cursor_confirm", True):
+            return candidate
+        humanize.human_sleep(humanize.rand_range([0.04, 0.09]))
+        if self._is_interact_cursor():
+            return candidate
+        # Small local search only -- never a big sweep.
+        for pt in self._local_nudges(candidate):
+            self.controller.move_to(pt, duration=humanize.rand_range([0.03, 0.07]))
+            humanize.human_sleep(humanize.rand_range([0.02, 0.04]))
+            if self._is_interact_cursor():
+                return (int(pt[0]), int(pt[1]))
+        return candidate  # give it our best visual guess if the gear never showed
+
+    def _local_nudges(self, center: Point) -> List[Point]:
+        import math
+        pts: List[Point] = []
+        for radius in (7, 12, 18):
+            for k in range(6):
+                ang = 2 * math.pi * k / 6 + radius  # rotate each ring so points differ
+                pts.append((center[0] + radius * math.cos(ang),
+                            center[1] + radius * math.sin(ang)))
+        return pts
+
+    # ------------------------------------------------------------------ #
     def find(self, retries: int = 3) -> Optional[Point]:
         """Locate the bobber. Retries a few times since it takes a beat to render."""
         strategy = self.b.get("strategy", "vision")
