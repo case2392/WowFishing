@@ -1,0 +1,76 @@
+# =============================================================================
+#  WoW Classic Fishing Bot - configuration
+#  Edit these values, or run  `python calibrate.py`  to fill them in visually.
+# =============================================================================
+
+# --- Keybindings (must match your in-game keybinds) --------------------------
+keys:
+  cast: "8"          # the hotbar key your Fishing spell/macro is on
+  loot_modifier: "shift"   # held while right-clicking to auto-loot (Auto Loot ON is better)
+  interact_button: "right" # mouse button used to grab the bobber ("right" is default)
+
+# --- Fishing region ----------------------------------------------------------
+# Screen rectangle (pixels) the bobber can land in. Keep it fairly tight around
+# where you cast so the bobber is found fast. Filled in by calibrate.py.
+# Coordinates are absolute screen pixels: [left, top, width, height]
+region: [700, 300, 520, 380]
+
+# --- Bobber detection --------------------------------------------------------
+bobber:
+  # strategy:
+  #   "cursor_scan" -> move the mouse over the region until the WoW cursor turns
+  #                    into the "cast/interact" hand. Most reliable. Windows only.
+  #   "template"    -> OpenCV template match against a saved bobber image.
+  #                    Cross-platform. Run calibrate.py to capture the template.
+  strategy: "cursor_scan"
+  template_path: "assets/bobber.png"
+  match_threshold: 0.62      # template match confidence (0-1), lower = looser
+  scan_step: 22              # px between probe points in cursor_scan mode
+  scan_settle_ms: 9          # ms to let the cursor update after each move
+
+# --- Splash (bite) detection -------------------------------------------------
+splash:
+  # method:
+  #   "sound" -> listen to game audio for the splash "plunk". Very reliable and
+  #              completely independent of what the water looks like. Windows only.
+  #   "pixel" -> watch the small area around the bobber for the white splash
+  #              foam. Cross-platform, no audio deps.
+  method: "sound"
+  # -- sound settings --
+  sound_threshold: 0.16      # loudness spike (0-1) that counts as a splash
+  sound_cooldown_ms: 1500    # ignore this long after a cast (cast/plop noise)
+  # -- pixel settings --
+  pixel_watch_radius: 45     # px box half-size around the bobber to watch
+  pixel_change_ratio: 0.06   # fraction of changed pixels that counts as a splash
+
+# --- Timing (all values are seconds; jitter is applied on top) ---------------
+timing:
+  bite_timeout: 26.0         # give up & recast if no bite within this long
+  post_cast_wait: 1.6        # base wait after casting before we start watching
+  min_cast_interval: 0.0     # extra base pause between casts
+
+# --- Humanization / anti-detection ------------------------------------------
+# These add natural variance so the behavior does not look robotic.
+human:
+  reaction_ms: [180, 520]    # random delay between seeing the splash and clicking
+  mouse_speed: [0.25, 0.55]  # seconds to travel to the bobber (varies per move)
+  mouse_overshoot: 0.35      # chance of overshooting then correcting, like a human
+  micro_jitter_px: 3         # tiny idle hand-tremor while hovering
+  cast_delay_ms: [90, 420]   # random pause before pressing the cast key
+  # occasional "distraction": pause and drift the camera/mouse a little
+  distraction_chance: 0.05   # per-cast probability
+  distraction_secs: [1.5, 6.0]
+  # take a longer break every so often (simulates stepping away)
+  break_every_casts: [55, 120]   # take a break after a random N casts in this range
+  break_secs: [25, 140]
+  # hard session limit so you never run for an inhuman number of hours
+  max_session_minutes: 150
+  # small random chance to "miss-click" and just recast (humans fumble)
+  fumble_chance: 0.02
+
+# --- Safety / control --------------------------------------------------------
+control:
+  hotkey_toggle: "f9"        # press to pause / resume the bot
+  hotkey_quit: "f10"         # press to stop the bot entirely
+  start_paused: true         # start paused; press the toggle hotkey when ready
+  dry_run: false             # true = detect & log but never press keys/click

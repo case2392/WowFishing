@@ -1,0 +1,13 @@
+# Core dependencies for the WoW Classic fishing bot
+# Install with:  pip install -r requirements.txt
+
+numpy>=1.24
+opencv-python>=4.8        # bobber detection + splash (pixel) detection
+mss>=9.0                  # fast screen capture
+pydirectinput>=1.0.4      # DirectX-friendly keyboard/mouse (scan-code SendInput)
+PyYAML>=6.0               # config file
+keyboard>=0.13.5          # global hotkey to arm/pause/stop the bot
+
+# --- Windows-only extras (recommended, installed automatically on Windows) ---
+pywin32>=306 ; sys_platform == "win32"        # reliable cursor-change bobber detection
+PyAudioWPatch>=0.2.12 ; sys_platform == "win32"  # WASAPI loopback for sound-based splash detection
