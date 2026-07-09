@@ -13,20 +13,33 @@ keys:
 # Screen rectangle (pixels) the bobber can land in. Keep it fairly tight around
 # where you cast so the bobber is found fast. Filled in by calibrate.py.
 # Coordinates are absolute screen pixels: [left, top, width, height]
-region: [700, 300, 520, 380]
+# Default below matches the large "the bobber can land anywhere in here" box for a
+# 1920x1080 screen. Because the bobber roams, detection is designed to find it
+# anywhere in this area rather than assuming it lands centrally.
+# Run `python calibrate.py` to fit the box to YOUR screen / fishing spot.
+region: [335, 175, 1115, 705]
+
+# Optional: rectangles (absolute screen pixels [left, top, width, height]) to
+# BLANK OUT before detection -- e.g. a party nameplate whose blue mana bar sits
+# inside the region. Leave empty unless preview.py shows a false lock onto UI.
+# Example: ignore_zones: [[560, 555, 210, 70]]
+ignore_zones: []
 
 # --- Bobber detection --------------------------------------------------------
 bobber:
   # strategy:
-  #   "cursor_scan" -> move the mouse over the region until the WoW cursor turns
-  #                    into the "cast/interact" hand. Most reliable. Windows only.
-  #   "template"    -> OpenCV template match against a saved bobber image.
-  #                    Cross-platform. Run calibrate.py to capture the template.
-  strategy: "cursor_scan"
+  #   "vision"      -> find the bobber by LOOKING at the screen (no mouse motion).
+  #                    Uses your saved bobber image (multi-scale match) and, as a
+  #                    fallback, red/white blob detection. This is the default and
+  #                    the one that does NOT look robotic.
+  #   "template"    -> single-scale OpenCV template match only.
+  #   "cursor_scan" -> LEGACY. Sweeps the mouse in a grid to find the bobber.
+  #                    Reliable but looks like a bot -- avoid.
+  strategy: "vision"
   template_path: "assets/bobber.png"
-  match_threshold: 0.62      # template match confidence (0-1), lower = looser
-  scan_step: 22              # px between probe points in cursor_scan mode
-  scan_settle_ms: 9          # ms to let the cursor update after each move
+  match_threshold: 0.60      # template match confidence (0-1), lower = looser
+  scan_step: 22              # (cursor_scan only) px between probe points
+  scan_settle_ms: 9          # (cursor_scan only) ms to let the cursor update
 
 # --- Splash (bite) detection -------------------------------------------------
 splash:
@@ -35,7 +48,7 @@ splash:
   #              completely independent of what the water looks like. Windows only.
   #   "pixel" -> watch the small area around the bobber for the white splash
   #              foam. Cross-platform, no audio deps.
-  method: "sound"
+  method: "pixel"
   # -- sound settings --
   sound_threshold: 0.16      # loudness spike (0-1) that counts as a splash
   sound_cooldown_ms: 1500    # ignore this long after a cast (cast/plop noise)

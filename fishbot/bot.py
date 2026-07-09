@@ -146,7 +146,8 @@ class FishingBot:
             humanize.human_sleep(humanize.rand_range([0.3, 0.9]))
             return
 
-        # Hover the bobber with a little idle tremor while we wait for the bite.
+        # Move onto the bobber ONCE, smoothly, then leave the cursor there and
+        # let it sit perfectly still -- exactly like a person watching for a bite.
         self.controller.move_to(bobber)
         if isinstance(self.detector, PixelSplashDetector):
             self.detector.set_target(bobber)
@@ -174,16 +175,18 @@ class FishingBot:
         humanize.human_sleep(humanize.jittered(base_gap + 0.4, 0.4))
 
     def _watch_for_bite(self, timeout: float) -> bool:
-        """Wait for a splash, keeping a light idle tremor on the cursor."""
-        # Split the wait so we can micro-jitter and honor pause/quit mid-wait.
+        """Wait for the splash while the cursor sits still on the bobber.
+
+        The mouse deliberately does NOT move here -- a human parks the cursor on
+        the bobber and simply watches until it dips. Moving would look robotic.
+        """
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self._paused or self._quit:
                 return False
-            slice_time = min(2.0, deadline - time.monotonic())
+            slice_time = min(1.5, deadline - time.monotonic())
             if self.detector.wait_for_splash(slice_time):
                 return True
-            self.controller.micro_jitter()
         return False
 
     # ------------------------------------------------------------------ #

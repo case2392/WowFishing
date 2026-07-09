@@ -1,177 +1,172 @@
 # WoW Classic Fishing Bot
 
-An automated fisher for **World of Warcraft Classic**. It casts your fishing
-line, spots the bobber, waits for the splash (the bite), loots the catch, and
-repeats — indefinitely and hands-free. Every action is deliberately randomized
-and given natural mouse motion so the behavior reads like a real, slightly
-distractible person rather than a machine.
+An automated fisher for **World of Warcraft Classic**. It casts, spots the
+bobber by **looking at the screen**, moves the cursor onto it **once**, lets it
+**sit perfectly still** until the splash, then right-clicks to reel in — and
+repeats. All timing and motion is randomized so it behaves like a real,
+slightly distractible person, not a machine.
 
 ```
-Cast  ->  find bobber  ->  hover & wait for splash  ->  react & loot  ->  repeat
-                                                    \-> take breaks, get "distracted"
+Cast  ->  spot bobber (no mouse sweeping)  ->  move onto it once  ->
+          sit still & watch  ->  splash!  ->  react & right-click  ->  repeat
 ```
 
-> ⚠️ **Heads up:** Automating gameplay violates Blizzard's Terms of Service and
-> can get your account banned. You asked for this and accept that risk — this
-> README states it plainly so nobody is surprised. Use it on an account you're
-> willing to lose. This is for personal, educational use.
+> ⚠️ Automating gameplay violates Blizzard's Terms of Service and can get your
+> account banned. You've accepted that risk — this note is just so it's stated
+> plainly. Use an account you're willing to lose.
 
 ---
 
-## How it works
+## The 3-step quick start (Windows)
 
-| Stage | What happens |
-|-------|--------------|
-| **Cast** | Presses your fishing hotbar key (default `8`) after a short, random hesitation. |
-| **Find bobber** | Locates the bobber in a screen region you calibrate. Two strategies (below). |
-| **Wait for bite** | Detects the splash by **sound** (WASAPI loopback) or **pixel change**. |
-| **Loot** | After a human-like reaction delay, moves along a curved path and shift-right-clicks the bobber. |
-| **Stay human** | Randomized timing everywhere, cursor tremor while hovering, occasional distractions, periodic breaks, and a hard session time limit. |
+```bash
+# 1. install once
+pip install -r requirements.txt
 
-### Bobber detection strategies
-- **`cursor_scan`** (default, Windows): sweeps the mouse across the fishing area
-  until Windows reports the cursor changed into WoW's *interact* cursor — i.e.
-  the game itself tells us we're over the bobber. Very reliable and independent
-  of water color or weather.
-- **`template`** (cross-platform): OpenCV matches a saved screenshot of the
-  bobber. Use this if you're not on Windows or prefer image matching.
+# 2. cast in-game, then CHECK that it sees your bobber (this sends NO input):
+python preview.py
+#    -> open detection_preview.png; you should see a green crosshair on the bobber
 
-### Splash (bite) detection
-- **`sound`** (default, Windows): listens to the game's own audio for the splash
-  transient — exactly how a human notices a bite. Robust to visuals.
-- **`pixel`** (cross-platform): watches a small box around the bobber for the
-  white splash foam.
+# 3. fish:
+python run.py
+#    -> it starts PAUSED. Alt-tab into WoW and press F9 to begin. F10 to stop.
+```
 
----
+That's the whole thing. If step 2 already puts the crosshair on your bobber,
+step 3 will just work. If it doesn't, see **"If it can't find the bobber"** below.
 
-## Anti-detection / humanization
-
-Nothing the bot does is on a fixed clock. Specifically:
-
-- **Bezier mouse paths** with ease-in/ease-out, a random sideways bow, and
-  occasional **overshoot-then-correct** — no straight teleports.
-- **Gaussian-jittered timing** for casts, reactions, and waits (variance scales
-  with the delay).
-- **Idle hand tremor**: the cursor micro-jitters while hovering the bobber.
-- **Reaction delay** between seeing the splash and clicking (default 180–520 ms).
-- **Distractions**: small random chance to drift the mouse away and pause.
-- **Breaks**: every ~55–120 casts it "steps away" for 25–140 s.
-- **Fumbles**: rare intentional misfires, like a person mis-timing a cast.
-- **Session limit**: stops after a configurable number of minutes.
-- **DirectX-correct input** via `pydirectinput` (hardware scan codes), which WoW
-  actually registers — unlike naive key events.
-
-Tune all of it in `config.yaml` under the `human:` section.
+Before you start, in WoW:
+- Display mode = **Windowed (Fullscreen)** (not exclusive fullscreen).
+- Put **Fishing** (or a `/cast Fishing` macro) on a hotbar key; set `keys.cast`
+  in `config.yaml` to match (default `8`).
+- Turn on **Auto Loot** (Interface → Controls) for clean pickups.
+- Equip your pole, stand still, face the water.
 
 ---
 
-## Setup (Windows — recommended)
+## How it finds the bobber (no robotic mouse sweeping)
 
-1. **Install Python 3.10+** from python.org (tick *Add to PATH*).
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   On Windows this also pulls `pywin32` (cursor detection) and `PyAudioWPatch`
-   (sound splash detection).
-3. **In WoW:**
-   - Set the display to **Windowed (Fullscreen)** — *not* exclusive fullscreen,
-     or screen capture / input may not work.
-   - Put your **Fishing** spell (or a `/cast Fishing` macro) on a hotbar key and
-     set `keys.cast` in `config.yaml` to match.
-   - Turn on **Auto Loot** (Interface → Controls) for clean pickups.
-   - Equip a fishing pole, stand still, and face the water.
-4. **Calibrate:**
-   ```bash
-   python calibrate.py
-   ```
-   Follow the prompts to mark the fishing region (and optionally capture a bobber
-   image if you'll use the `template` strategy).
-5. **Run:**
-   ```bash
-   python run.py
-   ```
-   The bot **starts paused**. Alt-tab back into WoW and press **F9** to begin.
+The bobber is located purely from screen pixels — **the mouse doesn't move while
+searching**. The default `vision` strategy keys on the standard Classic bobber's
+signature: a **red feather sitting just above a steel-blue band**. That red-over-
+blue pairing basically never occurs by chance in the water, so it's a reliable,
+low-false-positive fingerprint — and it needs no setup or template image.
 
-### Controls
+Once found, the cursor glides to the bobber **one time** along a natural curved
+path, then holds still and watches for the splash. When the bobber dips, a short
+human reaction delay passes and it right-clicks in place. That's exactly the
+flow a person uses.
+
+---
+
+## Human-like behavior (anti-detection)
+
+- **Curved, eased mouse motion** with occasional overshoot-and-correct — never a
+  straight teleport.
+- **The cursor sits still on the bobber** while waiting — no jitter, no sweeping.
+- **Gaussian-jittered timing** for casts, reactions, and waits.
+- **Human reaction delay** (default 180–520 ms) between splash and click.
+- **Occasional distractions** — briefly drifts the mouse away and pauses.
+- **Breaks** every ~55–120 casts (25–140 s), like stepping away.
+- **Rare fumbles** — a mistimed cast now and then.
+- **Session limit** — auto-stops after a set number of minutes.
+- **DirectX-correct input** via `pydirectinput`, which WoW actually registers.
+
+All tunable in `config.yaml` under `human:`.
+
+---
+
+## If it can't find the bobber
+
+Run `python preview.py --loop` and watch `detection_preview.png` update. Then:
+
+1. **Wrong area?** The watched `region` may not cover where your bobber lands.
+   Run `python calibrate.py` and draw a tight box around your splash zone. A
+   tighter box is faster and avoids false positives.
+2. **Different fishing spot / camera?** The bobber moved. Re-run `calibrate.py`
+   for the new spot.
+3. **Still missing it?** Capture your exact bobber as a template:
+   `python calibrate.py` → answer "yes" to the bobber capture step. The bot will
+   then also multi-scale template-match your real bobber image.
+4. **Send me `detection_preview.png`** — it shows exactly what the bot sees and
+   makes it easy to tune.
+
+---
+
+## Splash (bite) detection
+
+Default is **`pixel`**: it watches a small box around the bobber and fires when
+the splash foam changes enough pixels. No extra setup.
+
+Prefer detecting the bite by **sound** (very reliable, mirrors how you'd hear it)?
+Set `splash.method: sound` in `config.yaml` (Windows; needs `PyAudioWPatch`,
+installed by `requirements.txt`).
+
+---
+
+## Controls
+
 | Key | Action |
 |-----|--------|
-| **F9** | Pause / resume |
+| **F9** | Pause / resume (bot starts paused) |
 | **F10** | Quit |
-| **Ctrl+C** (terminal) | Force quit |
-
----
-
-## Configuration cheatsheet (`config.yaml`)
-
-```yaml
-keys:
-  cast: "8"                # your Fishing hotbar key
-region: [700, 300, 520, 380]   # set by calibrate.py — where the bobber lands
-bobber:
-  strategy: "cursor_scan"  # or "template"
-splash:
-  method: "sound"          # or "pixel"
-  sound_threshold: 0.16    # raise if it triggers on background noise
-human:
-  reaction_ms: [180, 520]  # human delay before clicking the bite
-  break_every_casts: [55, 120]
-  max_session_minutes: 150
-control:
-  start_paused: true
-  dry_run: false           # true = detect & log, never send input
-```
-
-The full, commented file is in `config.yaml`.
+| **Ctrl+C** in the terminal | Force quit |
 
 ---
 
 ## Testing without touching the game
 
-Run in **dry-run** mode to watch it detect casts/bobbers/splashes and log what it
-*would* do, without ever pressing a key or clicking:
-
-```bash
-python run.py --dry-run
-```
+- `python preview.py` — see detection only, sends nothing.
+- `python run.py --dry-run` — runs the full loop and logs what it *would* do, but
+  never presses keys or clicks.
 
 ---
 
-## Troubleshooting
+## Config cheatsheet (`config.yaml`)
 
-| Symptom | Fix |
-|---------|-----|
-| Keys/clicks do nothing in-game | Ensure `pydirectinput` is installed; use Windowed (Fullscreen); run the terminal **as Administrator** (WoW runs elevated for some setups). |
-| Bobber never found (`cursor_scan`) | Confirm `pywin32` is installed; tighten `region` around the splash zone; lower `scan_step`. |
-| Bobber never found (`template`) | Re-run `calibrate.py` hovering the bobber's center; lower `bobber.match_threshold`. |
-| Splash never/always triggers (`sound`) | Adjust `splash.sound_threshold`; make sure game audio actually plays through the default output device. |
-| Splash flaky (`pixel`) | Increase `pixel_watch_radius`; adjust `pixel_change_ratio`. |
-| No hotkeys | Install `keyboard`; on some systems it needs Administrator to capture global keys. |
+```yaml
+keys:
+  cast: "8"                    # your Fishing hotbar key
+region: [335, 175, 1115, 705]  # the big "bobber can land anywhere" box (1080p)
+ignore_zones: []               # optional rects to blank out (e.g. a nameplate)
+bobber:
+  strategy: "vision"           # red+blue signature; no template needed
+splash:
+  method: "pixel"              # or "sound"
+human:
+  reaction_ms: [180, 520]
+  break_every_casts: [55, 120]
+  max_session_minutes: 150
+control:
+  start_paused: true
+  dry_run: false
+```
 
 ---
 
 ## Project layout
 
 ```
-run.py               # entry point
-calibrate.py         # interactive region / template setup
-config.yaml          # all settings (commented)
+run.py           # main entry point (F9 start / F10 stop)
+preview.py       # SAFE detection check -> writes detection_preview.png
+calibrate.py     # set the fishing region (and optionally capture your bobber)
+config.yaml      # all settings, commented
 requirements.txt
 fishbot/
-  bot.py             # main loop + control state machine
-  config.py          # typed config loading with defaults + deep-merge
-  humanize.py        # timing jitter, Bezier paths, breaks — the "human" layer
-  input_control.py   # DirectX-friendly keyboard/mouse + smooth movement
-  capture.py         # fast screen capture (mss)
-  bobber.py          # bobber detection (cursor_scan + template)
-  splash.py          # bite detection (sound + pixel)
+  bot.py           # main loop + controls, breaks, distractions, session cap
+  bobber.py        # vision detection: red+blue signature, template, blob
+  splash.py        # bite detection (pixel + sound)
+  input_control.py # DirectX-friendly input + smooth curved movement
+  capture.py       # fast screen capture (mss)
+  humanize.py      # timing jitter + Bezier mouse paths
+  config.py        # typed config with defaults
 ```
 
 ---
 
-## Notes on non-Windows
+## Non-Windows note
 
-The `template` bobber strategy and `pixel` splash method are cross-platform, but
-input injection into WoW and the most reliable detectors are built for Windows,
-where WoW Classic runs. On macOS/Linux you'll get further with dry-run and the
-cross-platform detectors, but sending input into the game is not guaranteed.
+The `vision`/`template` bobber detection and `pixel` splash method are
+cross-platform, but reliably injecting input into WoW (and sound-based splash
+detection) are built for Windows, where WoW Classic runs. Elsewhere, use
+`--dry-run` and `preview.py` to exercise detection.

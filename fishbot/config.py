@@ -30,7 +30,8 @@ def _deep_merge(base: dict, override: dict) -> dict:
 # Baseline so a partial config.yaml still produces a fully-formed object.
 _DEFAULTS: dict = {
     "keys": {"cast": "8", "loot_modifier": "shift", "interact_button": "right"},
-    "region": [700, 300, 520, 380],
+    "region": [335, 175, 1115, 705],
+    "ignore_zones": [],
     "bobber": {
         "strategy": "cursor_scan",
         "template_path": "assets/bobber.png",
@@ -76,6 +77,7 @@ _DEFAULTS: dict = {
 class Config:
     keys: dict
     region: List[int]
+    ignore_zones: list
     bobber: dict
     splash: dict
     timing: dict
@@ -95,6 +97,7 @@ class Config:
         return cls(
             keys=merged["keys"],
             region=list(merged["region"]),
+            ignore_zones=list(merged.get("ignore_zones", [])),
             bobber=merged["bobber"],
             splash=merged["splash"],
             timing=merged["timing"],
@@ -110,6 +113,7 @@ class Config:
         data = {
             "keys": self.keys,
             "region": self.region,
+            "ignore_zones": self.ignore_zones,
             "bobber": self.bobber,
             "splash": self.splash,
             "timing": self.timing,
